@@ -41,6 +41,7 @@ namespace MobitSystemInfoWidget
             }
             catch (Exception ex)
             {
+                StartupLogging.Log("WindowInitError", $"Window initialization failed: {ex.Message}");
                 Debug.WriteLine($"Window initialization failed: {ex.Message}");
             }
         }
@@ -65,6 +66,7 @@ namespace MobitSystemInfoWidget
             }
             catch (Exception ex)
             {
+                StartupLogging.Log("LoadSystemInfoError", $"LoadSystemInfo failed: {ex.Message}");
                 Debug.WriteLine($"LoadSystemInfo failed: {ex.Message}");
             }
         }
@@ -111,12 +113,14 @@ namespace MobitSystemInfoWidget
                     }
                     catch (Exception ex)
                     {
+                        StartupLogging.Log("PositionError", $"Failed to maintain bottom position: {ex.Message}");
                         Debug.WriteLine($"Failed to maintain bottom position: {ex.Message}");
                     }
                 }, DispatcherPriority.Background);
             }
             catch (Exception ex)
             {
+                StartupLogging.Log("UpdateUIError", $"UpdateUI failed: {ex.Message}");
                 Debug.WriteLine($"UpdateUI failed: {ex.Message}");
             }
         }
@@ -136,6 +140,7 @@ namespace MobitSystemInfoWidget
             }
             catch (Exception ex)
             {
+                StartupLogging.Log("ActivatedError", $"OnActivated positioning failed: {ex.Message}");
                 Debug.WriteLine($"OnActivated positioning failed: {ex.Message}");
             }
             

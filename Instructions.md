@@ -1,118 +1,135 @@
-# C# WPF Desktop Widget - Development Instructions
+Given:
 
-## Project Requirements
+It runs when launched from your project/publish folder (where the working directory is the same as the exe’s folder).
+It “flickers” with a tiny 0.1 MB process when launched via your deployment/startup method.
+Our diagnostic explicitly set WorkingDirectory to the install folder, and it looked fine.
+This points strongly to a working directory and/or write-location issue when launched outside the project folder.
 
-Create a C# WPF desktop application that replaces the PowerShell-based widget with identical functionality and appearance.
+Why this happens
 
-## Core Features
+If the app loads any files via relative paths (e.g., “Assets/bg.png”, “settings.json”), those resolve against the process’s current directory.
+From your project/publish folder, that works.
+From HKCU Run or some RMM launch contexts, CurrentDirectory is often C:\Windows\System32 (or something else), so relative file loads fail immediately and the app exits. That’s the tiny 0.1 MB blip you’re seeing.
+Program Files is read-only for standard users; if the app tries to write next to the exe (logs/settings), it will fail unless you write to AppData/LocalAppData.
+How to confirm quickly
 
-### Visual Requirements
-- **Exact same appearance** as the PowerShell widget using the provided XAML
-- **Positioning**: Top-right corner of screen, 15px from edges
-- **Always behind other windows** - never comes to front
-- **Transparent background** with rounded corners and drop shadow
-- **Non-interactive** - no moving, clicking, or focus stealing
-- **Hidden from taskbar and Alt+Tab**
+Temporarily add a startup log on app launch that writes to %LOCALAPPDATA%\MobitSystemInfoWidget\startup.log with:
+Environment.CurrentDirectory
+AppContext.BaseDirectory
+Assembly.GetExecutingAssembly().Location
+Any exceptions on startup
+Practical fixes
 
-### Functionality Requirements
+A) Make startup deterministic (recommended now)
 
-#### Single Instance Management
-- **Proper mutex implementation** to prevent multiple instances
-- Should handle abandoned mutex exceptions (crashed previous instances)
-- Use unique GUID-based mutex name: `Global\MobitSystemInfoWidget_B4C7F2E1-8A9D-4F3B-9C2E-1A2B3C4D5E6F`
+Don’t rely on HKCU Run to launch the exe directly (it won’t set a Start In/working directory).
+Use a Startup shortcut (.lnk) with Start In set to the install folder, or a tiny launcher .cmd that cd’s into the install folder before starting the exe.
+param(
+  [string]$InstallPath = "$env:ProgramFiles\MobitSystemInfoWidget",
+  [string]$ExeName = "MobitSystemInfoWidget.exe"
+)
 
-#### System Information Display
-Collect and display these fields (updating every 30 minutes):
-- **Computer name** (`Environment.MachineName`)
-- **Current user** (`Environment.UserName`)
-- **Domain** (WMI Win32_ComputerSystem.Domain, fallback to "Lokal Bruker")
-- **IP address** (DHCP preferred, fallback to any non-127.0.0.1)
-- **MAC address** (first active network adapter)
-- **Serial number** (WMI Win32_BIOS.SerialNumber)
-- **Manufacturer** (WMI Win32_ComputerSystem.Manufacturer)
-- **OS name and version** (WMI Win32_OperatingSystem)
-- **Last updated timestamp** (dd.MM.yyyy HH:mm format)
+$exe = Join-Path $InstallPath $ExeName
 
-#### Logo Handling
-- **Embedded resource**: Include logo.png as embedded resource
-- **Fallback text**: Show "mobit IT-Tjenester" if logo fails to load
-- **Error handling**: Graceful fallback without exceptions
+# Remove HKCU Run entry to avoid duplicate launches
+Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "MobitSystemInfoWidget" -ErrorAction SilentlyContinue
 
-#### Auto-Start Configuration
-- **Registry startup entry**: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
-- **Key name**: "MobitSystemInfoWidget"
-- **Value**: Full path to executable
-- **Self-registration**: App should add its own startup entry on first run
+# Create Startup folder shortcut with proper Start In
+$startup = [Environment]::GetFolderPath('Startup') # per-user Startup
+$shell = New-Object -ComObject WScript.Shell
+$link = $shell.CreateShortcut((Join-Path $startup "Mobit System Info Widget.lnk"))
+$link.TargetPath = $exe
+$link.WorkingDirectory = $InstallPath
+$link.Arguments = ""
+$link.WindowStyle = 7
+$link.Save()
 
-#### Window Behavior
-- **Always bottom layer**: Use Win32 SetWindowPos with HWND_BOTTOM
-- **No activation**: WS_EX_NOACTIVATE and WS_EX_TOOLWINDOW extended styles
-- **Timer refresh**: Update system info every 30 minutes
-- **Keep position**: Maintain bottom layer position during refreshes
+Write-Host "Startup shortcut created at: $startup"
 
-## Technical Specifications
+Optional: add a tiny launcher if you prefer
+@echo off
+cd /d "%~dp0"
+start "" "MobitSystemInfoWidget.exe"
 
-### Framework
-- **.NET 6 or higher** for single-file publishing support
-- **WPF Application** project template
-- **Windows target** (x64 recommended)
 
-### Publishing Requirements
-- **Single file executable**: Use PublishSingleFile=true
-- **Self-contained**: Include .NET runtime (or require .NET 6+ installed)
-- **Target size**: Keep under 50MB if possible
-- **Output**: Single .exe file for NinjaRMM deployment
+B) Harden the app (recommended going forward)
 
-### Performance Requirements
-- **Low CPU usage**: < 1% average CPU usage
-- **Low memory footprint**: < 50MB RAM usage
-- **Fast startup**: < 2 seconds to show widget
-- **Reliable refresh**: Never crash during WMI calls
+Resolve all file paths from AppContext.BaseDirectory (for read-only assets) or from a user-writable location for settings/logs.
+Never depend on Environment.CurrentDirectory.
+Don’t write to Program Files; write to %LOCALAPPDATA%\MobitSystemInfoWidget (or %APPDATA% if roaming is desired).
+using System;
+using System.IO;
 
-### Error Handling
-- **Graceful degradation**: Show "N/A" for unavailable system info
-- **WMI failures**: Handle timeout and access denied gracefully  
-- **Network failures**: Don't crash if network adapters unavailable
-- **Logging**: Optional console output for debugging (hidden in production)
+public static class PathHelpers
+{
+    public static string BaseDir => AppContext.BaseDirectory;
 
-## Deployment Integration
+    public static string Asset(string relative) =>
+        Path.Combine(BaseDir, relative);
 
-### NinjaRMM Compatibility
-- **Silent execution**: No user prompts or dialogs
-- **Return codes**: 0 for success, non-zero for failure
-- **File placement**: Can be placed anywhere, self-contained
-- **Admin rights**: Should work with both admin and user rights
-- **Windows versions**: Support Windows 10 and 11
+    public static string LocalDataDir {
+        get {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "MobitSystemInfoWidget");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+    }
 
-### Installation Behavior
-- **First run**: Auto-register for startup
-- **Cleanup**: Remove old instances before starting
-- **Update friendly**: Can be replaced while running (mutex will prevent conflicts)
+    public static string LocalData(string relative) =>
+        Path.Combine(LocalDataDir, relative);
+}
 
-## Code Structure Suggestions
+Usage examples:
 
-```
-MainWindow.xaml     - Use provided XAML exactly
-MainWindow.xaml.cs  - Window code-behind and system info logic
-App.xaml           - Application definition
-App.xaml.cs        - Single instance mutex and startup logic  
-SystemInfo.cs      - System information gathering class
-Win32Helper.cs     - P/Invoke declarations for window positioning
-Resources/         - Embedded logo.png
-```
+Read-only asset: File.OpenRead(PathHelpers.Asset("Assets\bg.png"))
+Settings/logs: PathHelpers.LocalData("settings.json") or PathHelpers.LocalData("logs\app.log")
+C) Add minimal startup logging to catch this class of issues next time
 
-## Success Criteria
+using System;
+using System.IO;
+using System.Reflection;
+using System.Windows;
+using System.Windows.Threading;
 
-1. **Identical appearance** to current PowerShell widget
-2. **Zero duplicate instances** - mutex works 100% reliably  
-3. **Successful NinjaRMM deployment** as single .exe file
-4. **Auto-startup registration** works on target machines
-5. **30-minute refresh cycle** maintains current timestamp
-6. **Resource efficient** - no memory leaks or CPU spikes
-7. **Crash resistant** - handles all WMI/network errors gracefully
+public static class StartupLogging
+{
+    public static void WireUp()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log("UnhandledException", e.ExceptionObject?.ToString());
+        Application.Current.DispatcherUnhandledException += (_, e) => { Log("DispatcherUnhandledException", e.Exception.ToString()); e.Handled = true; };
+        Log("Startup",
+            $"User={Environment.UserName}@{Environment.UserDomainName}\n" +
+            $"CurrentDirectory={Environment.CurrentDirectory}\n" +
+            $"BaseDirectory={AppContext.BaseDirectory}\n" +
+            $"AssemblyLocation={Assembly.GetExecutingAssembly().Location}\n" +
+            $"Time={DateTime.Now:O}");
+    }
 
-## Contact Information
-- **Email**: forde@mobit.no  
-- **Phone**: +47 90 68 05 05
+    private static void Log(string kind, string message)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MobitSystemInfoWidget", "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "startup.log"), $"[{DateTime.Now:O}] {kind}: {message}\n");
+        }
+        catch { /* swallow */ }
+    }
+}
 
-Use these exact values in the XAML - do not make them configurable.
+Then call StartupLogging.WireUp() at the earliest point in App.OnStartup.
+
+Why the diagnostic looked “fine”
+
+In my scripts I started the exe with Start-Process -WorkingDirectory $InstallPath, which made relative path loads succeed. That’s why it ran for 10 seconds and showed ~71 MB.
+The “flicker” you see elsewhere is likely the same exe starting with the wrong working directory, failing immediately, and potentially being relaunched by your RMM or a duplicate startup entry.
+Next steps
+
+Run Create-StartupShortcut.ps1 and remove the HKCU Run entry (script above already removes it).
+Try launching via the new Startup shortcut or double-clicking the exe in Program Files (that should also work because Explorer sets Start In to the folder).
+If you still see flicker, enable the startup logging above and share the log lines for CurrentDirectory and BaseDirectory.
+Also, small note: the “op_Division” error you saw earlier was just my script trying to divide an array by 1MB when multiple processes matched; unrelated to your app. If you want that fixed script too, I can share it, but it’s not impacting the widget.
+
+I’m confident this is a working-directory and/or write-location difference between your project folder and Program Files plus the way it’s launched at startup. The shortcut approach and path hardening will resolve it.

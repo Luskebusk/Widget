@@ -1,8 +1,6 @@
 using System;
 using System.Threading;
 using System.Windows;
-using Microsoft.Win32;
-using System.IO;
 using System.Diagnostics;
 
 namespace MobitSystemInfoWidget
@@ -14,17 +12,16 @@ namespace MobitSystemInfoWidget
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Wire up startup logging first thing
+            StartupLogging.WireUp();
+
             // Ensure single instance
             if (!CreateMutex())
             {
-                MessageBox.Show("Another instance of Mobit System Info Widget is already running.", 
-                    "Already Running", MessageBoxButton.OK, MessageBoxImage.Information);
+                StartupLogging.Log("SingleInstance", "Another instance is already running. Exiting.");
                 Shutdown();
                 return;
             }
-
-            // Register for auto-start
-            RegisterAutoStart();
 
             base.OnStartup(e);
         }
@@ -59,28 +56,15 @@ namespace MobitSystemInfoWidget
 
         private void RegisterAutoStart()
         {
+            // Auto-start is now handled by Create-StartupShortcut.ps1
+            // This method is kept for backward compatibility but does nothing
             try
             {
-                string executablePath = Environment.ProcessPath ?? "";
-                if (string.IsNullOrEmpty(executablePath))
-                    return;
-
-                using var key = Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Run", true);
-                
-                if (key != null)
-                {
-                    // Check if already registered
-                    var currentValue = key.GetValue("MobitSystemInfoWidget") as string;
-                    if (currentValue != executablePath)
-                    {
-                        key.SetValue("MobitSystemInfoWidget", executablePath);
-                    }
-                }
+                StartupLogging.Log("AutoStart", "Auto-start registration skipped - using startup shortcut method");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Auto-start registration failed: {ex.Message}");
+                Debug.WriteLine($"Auto-start registration info failed: {ex.Message}");
             }
         }
 
