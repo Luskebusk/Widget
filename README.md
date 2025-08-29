@@ -1,6 +1,6 @@
 # Mobit System Info Widget
 
-A lightweight C# WPF desktop widget that displays system information for Mobit IT-Tjenester support purposes.
+A lightweight C# WPF desktop widget that displays system information for IT support services.
 
 ## Features
 
@@ -35,11 +35,6 @@ The built executable is self-contained and can be deployed via NinjaRMM. On firs
 - **CPU usage**: <1% average
 - **Refresh interval**: 30 minutes
 - **Mutex name**: `Global\MobitSystemInfoWidget_B4C7F2E1-8A9D-4F3B-9C2E-1A2B3C4D5E6F`
-
-## Support
-
-- **Email**: forde@mobit.no
-- **Phone**: +47 90 68 05 05
 
 ## Files Structure
 
