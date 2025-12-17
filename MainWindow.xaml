@@ -9,9 +9,10 @@
         Background="Transparent"
         ResizeMode="NoResize" 
         ShowInTaskbar="False"
-        Topmost="False">
+        Topmost="False"
+        ShowActivated="False">
     
-    <Grid>
+    <Grid IsHitTestVisible="False">
         <Grid.Clip>
             <RectangleGeometry RadiusX="16" RadiusY="16" Rect="0,0,285,390"/>
         </Grid.Clip>

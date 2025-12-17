@@ -15,6 +15,7 @@ namespace MobitSystemInfoWidget
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_NOACTIVATE = 0x08000000;
         public const int WS_EX_TOOLWINDOW = 0x00000080;
+        public const int WS_EX_TRANSPARENT = 0x00000020;
 
         [DllImport("user32.dll")]
         public static extern bool SetWindowPos(IntPtr hWnd, int hWndInsertAfter, 
@@ -38,7 +39,9 @@ namespace MobitSystemInfoWidget
         public static void SetWindowExtendedStyles(IntPtr hwnd)
         {
             int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-            exStyle |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+            // WS_EX_TRANSPARENT lets mouse clicks pass through to windows underneath
+            // while still rendering the widget on screen.
+            exStyle |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT;
             SetWindowLong(hwnd, GWL_EXSTYLE, exStyle);
         }
     }
