@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using System.Windows.Interop;
 using System.Diagnostics;
+using Microsoft.Win32;
 
 namespace MobitSystemInfoWidget
 {
@@ -23,6 +24,14 @@ namespace MobitSystemInfoWidget
 
             // Initial load
             LoadSystemInfo();
+
+            // Position once loaded to account for DPI/layout
+            Loaded += (_, _) => PositionWindowSafe();
+
+            // Keep position stable across display / power events
+            SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
+            SystemEvents.SessionSwitch += SystemEvents_SessionSwitch;
+            SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -49,12 +58,50 @@ namespace MobitSystemInfoWidget
         private void PositionWindow()
         {
             // Get screen dimensions
-            var screenWidth = SystemParameters.PrimaryScreenWidth;
-            var screenHeight = SystemParameters.PrimaryScreenHeight;
-            
-            // Position 15px from top-right corner
-            Left = screenWidth - Width - 15;
-            Top = 15;
+            var workArea = SystemParameters.WorkArea;
+            var margin = 15;
+
+            // Position 15px from top-right of the working area (respects taskbar)
+            Left = Math.Max(workArea.Left, workArea.Right - Width - margin);
+            Top = Math.Max(workArea.Top, workArea.Top + margin);
+        }
+
+        private void PositionWindowSafe()
+        {
+            try
+            {
+                PositionWindow();
+                var hwnd = new WindowInteropHelper(this).Handle;
+                Win32Helper.SetWindowToBottom(hwnd);
+            }
+            catch (Exception ex)
+            {
+                StartupLogging.Log("PositionError", $"PositionWindowSafe failed: {ex.Message}");
+                Debug.WriteLine($"PositionWindowSafe failed: {ex.Message}");
+            }
+        }
+
+        private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
+        {
+            PositionWindowSafe();
+        }
+
+        private void SystemEvents_SessionSwitch(object? sender, SessionSwitchEventArgs e)
+        {
+            // Re-apply position when user returns (e.g., unlocks)
+            if (e.Reason == SessionSwitchReason.SessionUnlock)
+            {
+                PositionWindowSafe();
+            }
+        }
+
+        private void SystemEvents_PowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+        {
+            // Re-apply after resume from sleep/hibernate
+            if (e.Mode == PowerModes.Resume)
+            {
+                PositionWindowSafe();
+            }
         }
 
         private void LoadSystemInfo()
@@ -149,6 +196,10 @@ namespace MobitSystemInfoWidget
 
         protected override void OnClosed(EventArgs e)
         {
+            SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
+            SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
+            SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
+
             _refreshTimer?.Stop();
             _refreshTimer = null;
             base.OnClosed(e);
